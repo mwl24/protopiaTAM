@@ -1,0 +1,27 @@
+---
+title: "Predictive Model"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+```
+
+```{r}
+df <- read_excel("data/Alumni-Engagement-Market-Research-Master-List.xlsx")
+df <- df %>% select(Rank, Q1, Q2, Q3, Q4, Q5, Q6, Q42, Q43, Q44, Q45)
+df <- df[-1,]
+df <- lapply(df, factor)
+df <- df %>% mutate_all(funs(factor(.)))
+df
+
+lm1 <- lm(Q44 ~., data = df)
+summary(lm1)
+```
+
+
