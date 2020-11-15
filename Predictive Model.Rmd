@@ -10,18 +10,109 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(tidyverse)
 library(readxl)
+library(randomForest)
+require(caTools)
 ```
 
 ```{r}
 df <- read_excel("data/Alumni-Engagement-Market-Research-Master-List.xlsx")
 df <- df %>% select(Rank, Q1, Q2, Q3, Q4, Q5, Q6, Q42, Q43, Q44, Q45)
 df <- df[-1,]
-df <- lapply(df, factor)
 df <- df %>% mutate_all(funs(factor(.)))
+df <- df %>% mutate(spending = ifelse(Q44 == "$80,000 - $100,000", 90000,
+                                      ifelse(Q44 == "$60,000 - $80,000", 70000,
+                                             ifelse(Q44 == "$40,000 - $60,000", 50000,
+                                                    ifelse(Q44 == "$20,000 - $40,000", 30000,
+                                                           10000)))))
+df$spending <- round(unlist(lapply(df$spending, function (x) rnorm(1, mean = x, sd = 5000))))
+
+plot(df$Rank,df$spending)
 df
 
-lm1 <- lm(Q44 ~., data = df)
+?sample()
+?transmute
+?ifelse()
+?rnorm()
+
+lm1 <- glm(Q44 ~ Rank + Q1 + Q2 + Q3 + Q4, data = df, family = "binomial")
 summary(lm1)
+
+sub_data <- df %>% 
+  select(Q44, Rank, Q1, Q2, Q3, Q4)
+sub_data <- na.omit(sub_data)
+sub_data <- sub_data[complete.cases(sub_data),]
+sub_data
+sample = sample.split(sub_data$Q44, SplitRatio = .75)
+train = subset(sub_data, sample == TRUE)
+test  = subset(sub_data, sample == FALSE)
+rf <- randomForest(Q44 ~ Rank + Q1 + Q2 + Q3 + Q4, data = train)
+pred = predict(rf, newdata=test[-1])
+pred
+rf
+cm = table(test[,1], pred)
+summary(rf)
+
+lm1 <- glm(Q44 ~ Rank + Q1 + Q2 + Q3 + Q4, data = train, family = "binomial")
+rf <- randomForest(Q44 ~ ., data =train, ntree = 10000, mtry = 3, nodesize = 6)
+rf
+summary(lm1)
+?randomForest
+
+sub_data$Q44 <- factor(sub_data$Q44, order = TRUE, 
+                                    levels = c("< $20,000", "$20,000 - $40,000", "$40,000 - $60,000", "$80,000 - $100,000"))
+sub_data$Rank <- factor(sub_data$Rank, order = TRUE, 
+                                    levels = c("1-20", "21-40", "41-60", "61-80", "81-100", "Existing"))
+sub_data$Q2 <- factor(sub_data$Q2, order = TRUE, 
+                                    levels = c("< 10,000", "10,000 - 20,000", "20,000 - 30,000", "30,000 - 40,000", 
+                                               "40,000 - 50,000", "50,000+"))
+sub_data$Q3 <- factor(sub_data$Q3, order = TRUE, 
+                                    levels = c("< $500M", "$500M - $1B", "$1B - $5B", "$5 - $10B"))
+sub_data$Q4 <- factor(sub_data$Q4, order = TRUE, 
+                                    levels = c("1 - 3", "4 - 6", "7 - 9", "10+"))
+
+lm1 <- glm(Q44 ~ Rank + Q1 + Q2 + Q3 + Q4, data = sub_data, family = "binomial")
+sub_data <- sub_data[complete.cases(sub_data),]
+rf <- randomForest(Q44 ~ ., data =sub_data, ntree = 10000)
+rf
+summary(lm1)
+```
+
+```{r}
+data <- sub_data %>% mutate(spending = ifelse(Q44 == "$80,000 - $100,000", 90000,
+                                      ifelse(Q44 == "$60,000 - $80,000", 70000,
+                                             ifelse(Q44 == "$40,000 - $60,000", 50000,
+                                                    ifelse(Q44 == "$20,000 - $40,000", 30000,
+                                                           10000))))) %>% 
+  mutate(numRank = ifelse(Rank == "1-20", 10,
+                          ifelse(Rank == "21-40", 30,
+                                 ifelse(Rank == "41-60", 50,
+                                        ifelse(Rank == "61-80", 70,
+                                               ifelse(Rank == "81-100", 90,
+                                                     150)))))) %>% 
+  mutate(pop_size = ifelse(Q2 == "< 10,000", 5000, 
+                           ifelse(Q2 == "10,000 - 20,000", 15000,
+                                  ifelse(Q2 == "20,000 - 30,000", 250000,
+                                         ifelse(Q3 == "30,000 - 40,000", 35000,
+                                                ifelse(Q3 == "40,000 - 50,000", 45000,
+                                                       75000)))))) %>% 
+  mutate(endowment = ifelse(Q3 == "< $500M", 250, 
+                            ifelse(Q3 == "$500M - $1B", 750, 
+                                   ifelse(Q3 == "$1B - $5B", 2500,
+                                          7500)))) %>% 
+  mutate(schools = ifelse(Q4 == "1 - 3", 2, 
+                          ifelse(Q4 == "4 - 6", 5,
+                                 ifelse(Q4 == "7 - 9", 8,
+                                        11)))) %>% 
+  select(spending, numRank, pop_size, endowment, schools)
+
+lm9 <- lm(spending ~., data = data)
+summary(lm9)
+rf <- randomForest(factor(spending, order = TRUE, levels = c(10000, 30000, 50000, 70000, 90000)) ~ ., 
+                   data =data)
+rf
+data
+
+
 ```
 
 
