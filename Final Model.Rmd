@@ -19,6 +19,10 @@ library(BBmisc)
 library(ggplot2)
 ```
 
+#Goal
+
+We will employ a variety of statistical learning techniques to understand key features of the data and the relationship between certain predictor variables and institutional allocation to alumni engagement in higher education. The best-performing models will then be used for prediction purposes and extrapolated to the broader set of colleges within the United States to arrive at a TAM estimate.
+
 #Data Cleaning and Variable Selection
 ```{r}
 # select variables and convert to factors
@@ -60,7 +64,9 @@ data <- sub_data %>% mutate(spending = ifelse(Q44 == "$80,000 - $100,000", 90000
   mutate(endowment = ifelse(Q3 == "< $500M", 250, 
                             ifelse(Q3 == "$500M - $1B", 750, 
                                    ifelse(Q3 == "$1B - $5B", 2500,
-                                          7500)))) %>% 
+                                          ifelse(Q3 == "$5B - $10B", 7500,
+                                                 ifelse(Q3 == "$10B - $15B", 12500,
+                                                        25000)))))) %>% 
   mutate(schools = ifelse(Q4 == "1 - 3", 2, 
                           ifelse(Q4 == "4 - 6", 5,
                                  ifelse(Q4 == "7 - 9", 8,
@@ -81,10 +87,17 @@ pairs(data)
 
 ##Linear Stepwise Regression
 
-```{r}
+```{r, warning=FALSE}
 full_lm <- lm(spending ~., data = data)
 step_lm <- stepAIC(full_lm, direction = "both", trace = FALSE)
 summary(step_lm)
+ggplot(data = data, aes(x = endowment, y = spending)) +
+  geom_point() + 
+  stat_smooth(methold = "lm", col = "dodgerblue3") + 
+  theme(panel.background = element_rect(fill = "white"),
+        axis.line.x = element_line(),
+        axis.line.y = element_line()) + 
+  ggtitle("Linear Model")
 ```
 
 ```{r}
@@ -116,8 +129,9 @@ summary(step_logit)
 Neither of the coefficients are particularly meaningful in the final model selected by stepwise selection. 
 
 ##KNN
+
 ```{r}
-norm_data <- cbind(data, as.data.frame(lapply(data[2:5], normalize))) # normalize data for standardization across predictors
+norm_data <- cbind(data[,1],as.data.frame(lapply(data[2:5], normalize))) # normalize data for standardization across predictors
 set.seed(100)
 train_ind <- sample(x = nrow(norm_data), size = 0.75 * nrow(norm_data))
 test_ind_neg <- -train_ind
@@ -126,7 +140,6 @@ testing <- norm_data[test_ind_neg, ]
 train_labels <- norm_data[train_ind, 1]
 spending_pred <- knn(train = training, test = testing, cl = train_labels)
 table(spending_pred, testing$spending)
-
 ```
 KNN gives us 100% classification accuracy on the testing data set in this instance, but we will perform cross-validation to find a more robust model and choice for `k`.
 
@@ -134,13 +147,13 @@ KNN gives us 100% classification accuracy on the testing data set in this instan
 set.seed(45)
 trControl <- trainControl(method = "cv", 
                           number = 10)
-fit <- train(factor(spending, order = TRUE, levels = c(10000, 30000, 50000, 70000, 90000)) ~ .,
+knn_fit <- train(factor(spending, order = TRUE, levels = c(10000, 30000, 50000, 70000, 90000)) ~ .,
              method = "knn",
              tuneGrid = expand.grid(k = 1:10),
              trControl = trControl,
              metric = "Accuracy",
              data = data)
-fit
+knn_fit
 ```
 Classification accuracy approaches 50% with the choice of `k = 3`, which is encouraging given that there are five different response classes.
 
@@ -178,10 +191,49 @@ table(data$spending, spending_qda_cv$class)
 
 #Final Model
 
-The best-performing models were multiple linear regression, KNN, and QDA. We will use each of them in turn to get an estimate for spending at each of the top 389 colleges in the United States as ranked in the U.S. News & World Report rankings. This will serve as the basis for our TAM estimate.
+The best-performing models were multiple linear regression, KNN, and QDA. We will use each of them in turn to get an estimate for spending at each of the top 385 colleges in the United States as ranked in the U.S. News & World Report rankings. This will serve as the basis for our TAM estimate.
 
-```{r}
-
+```{r, warning=FALSE}
+pred_data <- read_excel("data/Final-Data-Collection-Sheet.xlsx")
+pred_data <- pred_data %>% 
+  dplyr::select(Rank, Population_Size, Endowment, Schools) %>% 
+  rename(numRank = Rank, pop_size = Population_Size, endowment = Endowment, schools = Schools)
+head(pred_data <- round(transform(pred_data, endowment = as.double(endowment)), 1))
 ```
 
+```{r}
+# impute missing values
+library(imputeMissings)
+pred_data <- impute(pred_data, method = "randomForest")
+head(pred_data)
+```
 
+##Linear Regression Prediction
+```{r}
+# Use the stepwise regression model
+pred_lm <- predict(step_lm, pred_data)
+sum(pred_lm)
+```
+
+A simple linear regression with only `endowment` as a predictor gives $\$16,223,525$ as an estimate for TAM.
+
+##KNN Prediction
+```{r}
+# use normalized data from above for training
+pred_knn <- predict(knn_fit, newdata = pred_data)
+sum(as.numeric(as.character(pred_knn)))
+```
+
+A KNN with k = 3 gives $\$7,870,000$ as an estimate for TAM. While the KNN prediction worked relatively well when cross validation was used earlier, it is very likely that this estimate pretty substantially underestimates the actual market size. This is because the survey data obtained did not have any responses that indicated spending on alumni engagement services exceeding $\$100,000$. This is certainly not the case, but rather is a limitation of the dataset.
+
+##Quadratic Discriminant Analysis Prediction
+```{r}
+pred_qda <- predict(spending_qda, newdata = pred_data)
+sum(as.numeric(as.character(pred_qda$class)))
+```
+
+Quadratic Discriminant Analysis using all four predictors gives $\$19,010,000$ as an estimate for TAM.
+
+#Recommendations
+
+We contend with high confidence that these estimates for the size of the Total Addressable Market (TAM) for alumni engagement services should serve as lower-bound estimates. Limitations from survey data-- both due to its anonymous nature and unrepresentativeness of institutions that spend more than $\$100,000$ on alumni engagement software solutions-- likely contributed to a downward bias in estimates. 
