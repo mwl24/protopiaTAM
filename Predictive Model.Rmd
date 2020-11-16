@@ -12,6 +12,10 @@ library(tidyverse)
 library(readxl)
 library(randomForest)
 require(caTools)
+library(MASS)
+library(caret)
+library(class)
+library(BBmisc)
 ```
 
 ```{r}
@@ -111,8 +115,42 @@ rf <- randomForest(factor(spending, order = TRUE, levels = c(10000, 30000, 50000
                    data =data)
 rf
 data
+spending.lda <- lda(factor(spending, order = TRUE, levels = c(10000, 30000, 50000, 70000, 90000)) ~., data = data)
+lda.pred <- predict(spending.lda)
+table(data$spending, lda.pred$class)
+
+spending.qda <- qda(factor(spending, order = TRUE, levels = c(10000, 30000, 50000, 70000, 90000)) ~., data = data)
+spending.qda <- (qda(spending ~ schools + numRank + pop_size, data = data))
+qda.pred <- predict(spending.qda)
+table(data$spending, qda.pred$class)
 
 
+lda.pred <- predict(spending.lda)
+
+
+lda.pred
+spending.lda
+lda.pred
+qda.pred
+data
+?qda
 ```
+
+#KNN
+```{r}
+norm_data <- cbind(data, as.data.frame(lapply(data[2:5], normalize)))
+set.seed(3)
+train_ind <- sample(x = nrow(norm_data), size = 0.75 * nrow(norm_data))
+test_ind_neg <- -train_ind
+training <- norm_data[train_ind, ]
+testing <- norm_data[test_ind_neg, ]
+train_labels <- norm_data[train_ind, 1]
+train_labels
+norm_data
+spending_pred <- knn(train = training, test = testing,cl = train_labels)
+table(spending_pred, test$spending)
+spending_pred
+```
+
 
 
